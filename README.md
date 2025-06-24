@@ -41,8 +41,9 @@ flutter pub get
 cp .env.example .env
 cp .env.example env.staging
 
-# 4. Run development flavor
-flutter run --flavor dev
+# 4. Run Different flavor
+flutter run --flavor staging -t lib/flavours/main_staging.dart
+flutter run --flavor production -t lib/flavours/main_production.dart
 ```
 
 ---
