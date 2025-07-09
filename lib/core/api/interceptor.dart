@@ -4,6 +4,9 @@ import '../exceptions/custom_exceptions.dart';
 import '../keys/shared_prefs_keys.dart';
 
 class AppInterceptor extends Interceptor {
+  /// Use this dio only for refersh token
+  final Dio _refreshDio = Dio();
+
   @override
   Future<void> onRequest(
     RequestOptions options,
@@ -12,7 +15,7 @@ class AppInterceptor extends Interceptor {
     try {
       // Get SharedPreferences instance
       final prefs = await SharedPreferences.getInstance();
-      
+
       // Add auth token if available
       final authToken = prefs.getString(SharedPrefsKeys.authToken);
       if (authToken != null && authToken.isNotEmpty) {
@@ -31,28 +34,30 @@ class AppInterceptor extends Interceptor {
       );
     }
   }
+  // | -------------------------------------------
+  // | Properly handle success message according  |
+  // | to specifice need. For most cases, it      |
+  // | does not need to be changed.               |
+  // --------------------------------------------
+  //
+  //
+  // @override
+  // void onResponse(Response response, ResponseInterceptorHandler handler) {
+  //   // Handle successful responses
+  //   if (response.statusCode == 200 || response.statusCode == 201) {
+  //     return handler.next(response);
+  //   }
 
-  @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) {
-    // Handle successful responses
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      // You can save new tokens if they come in responses
-      if (response.data != null && response.data['token'] != null) {
-        _saveToken(response.data['token']);
-      }
-      return handler.next(response);
-    }
-
-    // Handle different status codes with custom exceptions
-    final exception = _handleStatusCode(response);
-    handler.reject(
-      DioException(
-        requestOptions: response.requestOptions,
-        response: response,
-        error: exception,
-      ),
-    );
-  }
+  //   // Handle different status codes with custom exceptions
+  //   final exception = _handleStatusCode(response);
+  //   handler.reject(
+  //     DioException(
+  //       requestOptions: response.requestOptions,
+  //       response: response,
+  //       error: exception,
+  //     ),
+  //   );
+  // }
 
   @override
   Future<void> onError(
@@ -72,9 +77,7 @@ class AppInterceptor extends Interceptor {
       );
     } else if (err.response != null) {
       // Handle HTTP error status codes
-      err = err.copyWith(
-        error: _handleStatusCode(err.response!),
-      );
+      err = err.copyWith(error: _handleStatusCode(err.response!));
     }
 
     // Special handling for 401 unauthorized
@@ -95,23 +98,37 @@ class AppInterceptor extends Interceptor {
     switch (statusCode) {
       case 400:
         return BadRequestException(
-          'Invalid request', data['errors'], stackTrace);
+          'Invalid request',
+          data['errors'],
+          stackTrace,
+        );
       case 401:
-        return UnauthorizedException(data['message'] ?? 'Unauthorized', stackTrace);
+        return UnauthorizedException(
+          data['message'] ?? 'Unauthorized',
+          stackTrace,
+        );
       case 403:
         return ForbiddenException(data['message'] ?? 'Forbidden', stackTrace);
       case 404:
-        return NotFoundException(data['message'] ?? 'Resource not found', stackTrace);
+        return NotFoundException(
+          data['message'] ?? 'Resource not found',
+          stackTrace,
+        );
       case 422:
         return ValidationException(data['errors'] ?? {}, stackTrace);
       case 500:
       case 502:
       case 503:
         return ServerException(
-          data['message'] ?? 'Server error', statusCode!, stackTrace);
+          data['message'] ?? 'Server error',
+          statusCode!,
+          stackTrace,
+        );
       default:
         return NetworkException(
-          data['message'] ?? 'Network error occurred', stackTrace);
+          data['message'] ?? 'Network error occurred',
+          stackTrace,
+        );
     }
   }
 
@@ -121,6 +138,48 @@ class AppInterceptor extends Interceptor {
       await prefs.setString(SharedPrefsKeys.authToken, token);
     } catch (e) {
       throw CacheException('Failed to save token');
+    }
+  }
+
+
+  /// This is for implement refresh token
+  /// If your api does not support refresh token
+  /// you can remove this method
+  Future<String?> _refreshToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final refreshToken = prefs.getString(SharedPrefsKeys.refreshToken);
+
+      if (refreshToken == null || refreshToken.isEmpty) {
+        throw UnauthenticatedException('No refresh token available');
+      }
+
+      final response = await _refreshDio.post(
+        '/auth/refresh',
+        data: {'refreshToken': refreshToken},
+      );
+
+      if (response.statusCode == 200) {
+        /** 
+         *  __________________________________________________
+         *  | Change the keys based on you api response      |
+         *  | For this, I am assuming token and refreshToken |
+         *  | Both are keys available in the response        |
+         *  |________________________________________________|
+         */
+        final newToken = response.data['token'] as String;
+        final newRefreshToken = response.data['refreshToken'] as String?;
+
+        await prefs.setString(SharedPrefsKeys.authToken, newToken);
+        if (newRefreshToken != null) {
+          await prefs.setString(SharedPrefsKeys.refreshToken, newRefreshToken);
+        }
+
+        return newToken;
+      }
+      return null;
+    } catch (e) {
+      throw UnauthenticatedException('Failed to refresh token');
     }
   }
 }
