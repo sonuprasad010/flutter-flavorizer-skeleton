@@ -2,6 +2,7 @@
 /// 
 /// This file contains all the custom exceptions used in the application
 /// to handle specific error cases in a more granular way.
+library;
 
 /// Base class for all custom exceptions
 abstract class AppException implements Exception {
@@ -72,8 +73,7 @@ class TimeoutException extends AppException {
 
 /// Exception for cache related errors
 class CacheException extends AppException {
-  const CacheException(String message, [StackTrace? stackTrace])
-      : super(message, stackTrace);
+  const CacheException(super.message, [super.stackTrace]);
 }
 
 /// Exception for when a feature is not implemented
